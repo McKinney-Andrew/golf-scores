@@ -4,13 +4,6 @@ library(lubridate)
 library(shiny)
 library(reactable)
 
-# load mckinney analytics colors
-darkblue <- rgb(15,25,100, maxColorValue = 255, alpha = 255)
-lightblue <- rgb(205,225,250, maxColorValue = 255, alpha = 255)
-teal <- rgb(175,215,215, maxColorValue = 255, alpha = 255)
-darkgray <- rgb(175,175,175, maxColorValue = 255, alpha = 255)
-lightgray <- rgb(225,225,225, maxColorValue = 255, alpha = 255)
-
 # global reactable theme
 options(reactable.theme = reactableTheme(
   headerStyle = list(
