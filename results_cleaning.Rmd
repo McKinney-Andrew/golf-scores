@@ -1,0 +1,158 @@
+---
+title: "All Tour Results - Cleaning"
+author: "Andrew McKinney"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+# load relevant libraries
+library(tidyverse)
+library(lubridate)
+library(janitor)
+
+```
+
+```{r}
+
+# load the data
+pgat_results <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Data/PGA Tour/pgat_results.csv")
+pgat_events <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Data/PGA Tour/pgat_events.csv")
+dpwt_results <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Data/DP World Tour/dpwt_results.csv")
+dpwt_events <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Data/DP World Tour/dpwt_events.csv")
+kft_results <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Data/Korn Ferry/kft_results.csv")
+kft_events <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Data/Korn Ferry/kft_events.csv")
+majors_results <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Data/Majors/majors_results.csv")
+majors_events <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Data/Majors/majors_events.csv")
+
+```
+
+```{r}
+
+# combine the event information from all tours
+events_combined <- 
+  bind_rows(pgat_events, dpwt_events, kft_events, majors_events) %>%
+  mutate(
+    tour = ifelse(event_id %in% majors_events$event_id, "MAJ", tour),
+    tour = ifelse(tour == "PGAT, PGAT", "PGAT", tour)
+  ) %>%
+  distinct()
+
+# combine the results from all tours
+results_combined <- 
+  bind_rows(pgat_results, dpwt_results, kft_results, majors_results) %>%
+  distinct()
+  
+# add event info to the results data
+df_01 <-
+  left_join(results_combined, events_combined, by = "event_id") %>%
+  select(event_id, event, tour, date, everything(), -week, -year)
+
+```
+
+```{r}
+
+# add event name and do some quick cleaning
+df_02 <-
+  df_01 %>%
+  mutate(
+    date = dmy(date),
+    tour = ifelse(tour == "PGAT, PGAT", "PGAT", tour),
+    strength_of_field = str_extract(strength_of_field, "[:digit:]+") %>% as.numeric(),
+    position = str_remove(position, "T"),
+    position = case_when(
+      position == "MC" ~ "900",
+      position == "WD" ~ "901",
+      position == "DQ" ~ "902",
+      TRUE ~ position
+    ) %>% as.numeric()
+  ) %>%
+  mutate_at(c("r1_score", "r2_score", "r3_score", "r4_score"), as.numeric) %>%
+  arrange(date)
+
+# fix incorrect scores
+df_03 <-
+  df_02 %>%
+  mutate(r4_score = ifelse(r4_score == (r1_score + r2_score) | (r4_score == r1_score + r2_score + r3_score), NA, r4_score)) %>%
+  mutate(total_score = rowSums(.[c("r1_score", "r2_score", "r3_score", "r4_score")], na.rm = TRUE)) %>%
+  mutate(total_score = ifelse(total_score == 0, NA, total_score)) %>%
+  mutate(
+    position = case_when(
+      !is.na(r1_score) & r1_score < 55 ~ 901,
+      !is.na(r2_score) & r2_score < 55 ~ 901,
+      !is.na(r3_score) & r3_score < 55 ~ 901,
+      !is.na(r4_score) & r4_score < 55 ~ 901,
+      TRUE ~ position
+    )
+  )
+
+# convert the MC, WD, and DQ codes back to characters before saving the file
+df_03.01 <-
+  df_03 %>%
+  mutate(
+    position = as.character(position),
+    position = case_when(
+      position == "900" ~ "MC",
+      position == "901" ~ "WD",
+      position == "902" ~ "DQ",
+      TRUE ~ position
+    )
+  )
+
+# save tournament scores
+write_csv(df_03.01, "tournament_scores.csv")
+
+```
+
+```{r}
+
+# get round-level scores
+df_04 <-
+  df_03 %>%
+  filter(position != 901 & position != 902) %>%
+  select(-c(strength_of_field, position, country, total_score)) %>%
+  pivot_longer(
+    cols = c(r1_score, r2_score, r3_score, r4_score),
+    names_to = "round", 
+    values_to = "score"
+  ) %>%
+  mutate(round = case_when(
+    round == "r1_score" ~ "1",
+    round == "r2_score" ~ "2",
+    round == "r3_score" ~ "3",
+    round == "r4_score" ~ "4"
+  ))
+
+# clean the date column
+df_05 <-
+  df_04 %>%
+  group_by(event_id, tour, player) %>%
+  arrange(date, round) %>%
+  mutate(date = rev(seq(first(date), length.out = n(), by = "-1 day"))) %>%
+  ungroup() %>%
+  filter(!is.na(score)) %>%
+  # account for events being co-sanctioned and only return unique rounds/scores
+  distinct(event_id, event, date, player, round, score) %>%
+  arrange(player)
+
+# save the round-level scores
+write_csv(df_05, "raw_scores.csv")
+
+```
+
+```{r}
+
+# get a players table
+players <- 
+  results_combined %>%
+  select(player, country) %>%
+  distinct(player, .keep_all = TRUE)
+
+# save the players data
+write_csv(players, "players.csv")
+  
+```
+
+
+

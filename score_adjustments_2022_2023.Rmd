@@ -1,0 +1,132 @@
+---
+title: "Score Adjustments"
+author: "Andrew McKinney"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+# load relevant libraries
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(tidymodels)
+
+# get rid of scientific notation
+options(scipen = 999)
+
+# increase memory limit
+memory.limit(size = 56000)
+
+```
+
+```{r}
+
+# load the data
+raw_scores <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Cleaning/raw_scores.csv")
+adjusted_scores <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Modelling/adjusted_scores.csv")
+tournament_round_terms <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Modelling/tournament_round_terms.csv")
+
+```
+
+```{r}
+
+# create the tournament-round interaction term
+df_01 <-
+  raw_scores %>%
+  select(event_id, event, round, date, player, score) %>%
+  mutate(tournament_round_interaction = paste0(event_id, "_", "R", round))
+
+# filter data to 2-year rolling window
+df_02 <- 
+  df_01 %>%
+  filter(date >= max(date) - years(2))
+
+# reorder the tournament-round interaction term so that the first event of the 2022 will be the comparison in the regression model
+df_03 <-
+  df_02 %>%
+  mutate(
+    tournament_round_interaction = as_factor(tournament_round_interaction),
+    tournament_round_interaction = fct_relevel(tournament_round_interaction, "9377_R1")
+  )
+         
+levels(df_03$tournament_round_interaction)
+
+```
+
+```{r}
+
+# set seed for when updates need to be made
+set.seed(102)
+
+# specify fixed effects regression models
+mod_2223 <- lm(score ~ 0 + player + tournament_round_interaction, data = df_03)
+
+# tidy the results
+df_04 <- tidy(mod_2223)
+
+```
+
+```{r}
+
+# collect tournament-round terms
+df_05 <-
+  df_04 %>%
+  filter(str_detect(term, "tournament_round")) %>%
+  mutate(term = str_remove(term, "tournament_round_interaction")) %>%
+  separate(
+    term,
+    into = c("event_id", "round"),
+    sep = "_"
+  ) %>%
+  mutate(
+    event_id = as.numeric(event_id),
+    round = str_extract(round, "[:digit:]+") %>% as.numeric()
+  ) %>%
+  mutate_at(c("estimate", "std.error", "statistic", "p.value"), round, 5)
+
+# print the tournament ids of last week's events
+df_01 %>%
+  filter(date == max(date)) %>%
+  distinct(event_id)
+
+# add event name and date back to the tournament-round terms
+df_06 <-
+  df_01 %>%
+  # to coincide with the 2-year window
+  filter(date >= max(date) - years(2)) %>%
+  distinct(event_id, event, round, date) %>%
+  left_join(., df_05 %>% select(event_id, round, estimate), by = c("event_id", "round")) %>%
+  mutate(estimate = ifelse(is.na(estimate), 0, estimate)) %>%
+  # filter to just include last week's events
+  filter(event_id == 9483 | event_id == 9484 | event_id == 9486)
+
+# add the results to previous adjustments
+df_07 <- bind_rows(df_06, tournament_round_terms)
+
+# save the tournament-round terms
+write_csv(df_07, "tournament_round_terms.csv")
+
+```
+
+```{r}
+
+# adjusted scores
+df_08 <- 
+  df_01 %>%
+  # filter to add the most recent scores to be adjusted; don't want to override old adjustments
+  filter(event_id == 9483 | event_id == 9484 | event_id == 9486) %>%
+  select(event_id, event, round, date, player, raw_score = score) %>%
+  left_join(., df_06, by = c("event_id", "event", "round", "date")) %>%
+  rename(tournament_round_adjustment = estimate) %>%
+  mutate(adjusted_score = raw_score - tournament_round_adjustment)
+
+# add the results to previous adjusted scores
+df_09 <- bind_rows(df_08, adjusted_scores)
+
+# save adjusted scores
+write_csv(df_09, "adjusted_scores.csv")
+
+```
+

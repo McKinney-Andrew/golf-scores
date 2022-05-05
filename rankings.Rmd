@@ -1,0 +1,85 @@
+---
+title: "Rankings"
+author: "Andrew McKinney"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+# load relevant libraries
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(zoo)
+
+# get rid of scientific notation
+options(scipen = 999)
+
+```
+
+```{r}
+
+# load the data
+owgr_rankings <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Data/OWGR/owgr_rankings.csv")
+mckinney_rankings <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Rankings/mckinney_rankings.csv")
+adjusted_scores <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Modelling/adjusted_scores.csv")
+players <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Cleaning/players.csv")
+
+```
+
+```{r}
+
+# calculate the number of rounds played and related variables
+df_01 <-
+  adjusted_scores %>%
+  filter(date >= max(date) - years(1)) %>%
+  arrange(player, desc(date)) %>%
+  group_by(player) %>%
+  summarise(
+    date = date,
+    rounds_played_rolling_year = n(),
+    last_round = max(date)
+  ) %>%
+  select(-date) %>%
+  distinct()
+  
+# determine rankings based on 80 round adjusted scoring average
+df_02 <-
+  left_join(adjusted_scores, df_01, by = "player") %>%
+  filter(rounds_played_rolling_year >= 25) %>%
+  arrange(player, desc(date)) %>%
+  group_by(player) %>%
+  summarise(
+    date = date,
+    rounds_played_rolling_year = rounds_played_rolling_year,
+    last_round = last_round,
+    x80_round_avg = rollmean(adjusted_score, k = 80, fill = NA, align = "left")
+  ) %>%
+  filter(date == max(date)) %>%
+  ungroup() %>%
+  mutate(rank = rank(x80_round_avg, ties.method = "min"), .before = "x80_round_avg") %>%
+  arrange(rank) %>%
+  left_join(., players, by = "player") %>%
+  select(player, country, rank, sbse = x80_round_avg, rounds_played_rolling_year, last_round) %>%
+  mutate(as_of_date = today() - days(1), .before = "rounds_played_rolling_year")
+
+# add current rankings to previous rankings
+df_03 <- bind_rows(df_02, mckinney_rankings)
+  
+# save the mckinney rankings
+write_csv(df_03, "mckinney_rankings.csv")
+
+# add the owgr
+df_04 <-
+  owgr_rankings %>%
+  select(player, owgr_rank = rank, average_points, owgr_as_of = date) %>%
+  left_join(., df_03, by = c("player", "owgr_as_of" = "as_of_date")) %>%
+  select(player, country, mckinney_rank = rank, sbse, owgr_rank, average_points, as_of_date = owgr_as_of, rounds_played_rolling_year, last_round)
+
+# save the complete rankings
+write_csv(df_04, "complete_rankings.csv")
+
+```
+
+
