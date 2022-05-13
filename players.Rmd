@@ -1,0 +1,92 @@
+---
+title: "Players"
+author: "Andrew McKinney"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+# load relevant libraries
+library(tidyverse)
+library(lubridate)
+library(janitor)
+
+```
+
+```{r}
+
+# load the data
+tournament_scores <- read_csv("C:/Users/andrew.mckinney/Dropbox/Projects/Golf/Cleaning/tournament_scores.csv")
+
+```
+
+```{r}
+
+# get a data set of unique players and countries
+df_01 <-
+  tournament_scores %>%
+  select(player, country) %>%
+  distinct()
+
+# pivot the data longer to get a count of rounds on each tour
+df_02 <-
+  tournament_scores %>%
+  select(player, country, event_id, tour, date, r1_score, r2_score, r3_score, r4_score) %>%
+  pivot_longer(
+    cols = c(r1_score, r2_score, r3_score, r4_score),
+    names_to = "round", 
+    values_to = "score"
+  ) %>%
+  mutate(round = case_when(
+    round == "r1_score" ~ "1",
+    round == "r2_score" ~ "2",
+    round == "r3_score" ~ "3",
+    round == "r4_score" ~ "4"
+  )) %>%
+  filter(tour != "MAJ") %>%
+  group_by(player, country, tour) %>%
+  summarise(
+    n = n(),
+    last_round = max(date)
+  ) %>%
+  filter(n == max(n)) %>%
+  ungroup() %>%
+  distinct()
+
+# join the tables
+df_03 <- 
+  left_join(df_01, df_02, by = c("player", "country"))
+
+# filter for players that have more rounds on one tour
+df_03_01 <- 
+  df_03 %>%
+  group_by(player, country) %>%
+  filter(n() <= 1) %>%
+  ungroup() %>%
+  select(player, country, tour)
+
+# filter and identify the primary tour of players that have an equal number of rounds on multiple tours
+df_03_02 <-
+  df_03 %>%
+  group_by(player, country) %>%
+  filter(n() > 1) %>%
+  filter(last_round == max(last_round)) %>%
+  mutate(tour = ifelse(n() > 1, NA, tour)) %>%
+  ungroup() %>%
+  select(player, country, tour) %>%
+  distinct()
+
+# add the players back to one data set
+df_04 <-
+  bind_rows(df_03_01, df_03_02) %>%
+  arrange(player, country)
+
+# save the players data
+write_csv(df_04, "players.csv")
+
+```
+
+
+
+
