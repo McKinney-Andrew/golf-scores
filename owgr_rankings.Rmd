@@ -1,0 +1,105 @@
+---
+title: "OWGR Rankings"
+author: "Andrew McKinney"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+# load relevant libraries
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(rvest)
+
+# load the past rankings
+archived_rankings <- read_csv("owgr_rankings.csv")
+
+# check for unique sets of rankings
+unique(archived_rankings$date)
+
+```
+
+```{r}
+
+# save the link for current rankings
+owgr_link <- "http://www.owgr.com/ranking?pageNo=1&pageSize=All&country=All"
+
+# write a function to return event ids to be scraped for
+getRankings <- function(url) {
+  
+  link <- read_html(url)
+  
+  date <-
+    link %>%
+    html_nodes("#ranking_table .sub_header") %>%
+    html_text() %>%
+    str_trim()
+    
+  rank <-
+    link %>%
+    html_nodes("td:nth-child(1)") %>% 
+    html_text() %>%
+    str_trim() %>%
+    as.numeric()
+  
+  player <-
+    link %>%
+    html_nodes("td.name") %>% 
+    html_text() %>%
+    str_trim()
+  
+  average_points <-
+    link %>%
+    html_nodes(".name+ td") %>%
+    html_text() %>%
+    str_trim() %>%
+    as.numeric()
+  
+  total_points <-
+    link %>%
+    html_nodes("td:nth-child(7)") %>%
+    html_text() %>%
+    str_trim() %>%
+    as.numeric()
+  
+  divisor <-
+    link %>%
+    html_nodes("td:nth-child(8)") %>% 
+    html_text() %>%
+    str_trim() %>%
+    as.numeric()
+  
+  events_played <-
+    link %>%
+    html_nodes("td:nth-child(11)") %>% 
+    html_text() %>%
+    str_trim() %>%
+    as.numeric()
+  
+  out <- tibble(
+    date = date,
+    rank = rank,
+    player = player,
+    average_points = average_points,
+    total_points = total_points,
+    divisor = divisor,
+    events_played = events_played
+  )
+    
+  return(out)
+  
+}
+
+# get the current rankings
+current_rankings <- getRankings(owgr_link) %>% mutate(date = dmy(date))
+
+# add the current rankings to the archived rankings
+df_01 <- bind_rows(current_rankings, archived_rankings)
+
+# save the owgr rankings
+write_csv(df_01, "owgr_rankings.csv")
+
+```
+
