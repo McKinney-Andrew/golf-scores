@@ -141,18 +141,5 @@ write_csv(df_05, "raw_scores.csv")
 
 ```
 
-```{r}
-
-# get a players table
-players <- 
-  results_combined %>%
-  select(player, country) %>%
-  distinct(player, .keep_all = TRUE)
-
-# save the players data
-write_csv(players, "players.csv")
-  
-```
-
 
 
