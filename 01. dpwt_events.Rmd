@@ -1,0 +1,108 @@
+---
+title: "DP World Tour Events"
+author: "Andrew McKinney"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+# load relevant libraries
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(rvest)
+
+```
+
+```{r}
+
+# list of years to be scraped for
+years <- 2010:2022
+
+# create an empty list
+event_links <- list()
+
+# write a loop to get each event id
+for (i in seq_along(years)) {
+  
+  event_link <- paste0("http://www.owgr.com/events?pageNo=1&pageSize=400&tour=DPWT&year=", years[i])
+  
+  event_links[[i]] <- event_link
+  
+}
+
+# write a function to return event ids to be scraped for
+getEvents <- function(url) {
+  
+  link <- read_html(url)
+  
+  week <-
+    link %>%
+    html_nodes("#ctl2") %>% 
+    html_text() %>%
+    str_trim()
+  
+  year <-
+    link %>%
+    html_nodes("#ctl3") %>% 
+    html_text() %>%
+    str_trim()
+  
+  tour <-
+    link %>%
+    html_nodes("#ctl4") %>%
+    html_text() %>%
+    str_trim()
+  
+  event <-
+    link %>%
+    html_nodes("#ctl5") %>%
+    html_text() %>%
+    str_trim()
+  
+  event_id <-
+    link %>%
+    html_elements("#ctl5 a") %>% 
+    as.character()
+  
+  out <- tibble(
+    week = week,
+    year = year,
+    tour = tour,
+    event = event,
+    event_id = event_id
+  )
+    
+  return(out)
+  
+}
+
+# create an empty tibble
+events <- tibble(
+  week = character(0),
+  year = character(0),
+  tour = character(0),
+  event = character(0),
+  event_id = character(0)
+)
+
+# write a loop to get all of the event ids
+for (i in event_links) {
+  
+  events <- 
+    events %>%
+    bind_rows(getEvents(i))
+  
+}
+
+# clean the event id column
+df_01 <- 
+  events %>%
+  mutate(event_id = str_extract(event_id, "(?<=eventid=)[:digit:]*") %>% str_trim())
+
+# save the event ids
+write_csv(df_01, "dpwt_events.csv")
+
+```
+

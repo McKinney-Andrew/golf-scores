@@ -1,0 +1,171 @@
+---
+title: "PGA Tour Results"
+author: "Andrew McKinney"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+# load relevant libraries
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(rvest)
+
+# load the data
+events <- read_csv("dpwt_events.csv")
+archived_results <- read_csv("dpwt_results_2010_2021.csv") 
+
+```
+
+```{r}
+
+# get rid of problematic events before extracting event ids
+df_01 <-
+  events %>%
+  filter(year == 2022) %>%
+  filter(
+    event != "WGC - Dell Technologies Match Play",
+  )
+
+# get tournament IDs
+event_ids <- unique(df_01$event_id)
+
+# create an empty list
+result_links <- list()
+
+# write a loop to get the link of each tournament's results
+for (i in seq_along(event_ids)) {
+  
+  result_link <- 
+    paste0(
+      "http://www.owgr.com/en/Events/EventResult.aspx?eventid=",
+      event_ids[i]
+    )
+  
+  result_links[[i]] <- result_link
+  
+}
+
+# write a function to return a tibble of results
+getResults <- function(url) {
+  
+  link <- read_html(url)
+  
+  event_id <- str_extract(url, "(?<=eventid=).*")
+  
+  date <-
+    link %>%
+    html_nodes("#event_result_table time") %>% 
+    html_text() %>%
+    str_trim()
+  
+  strength_of_field <-
+    link %>%
+    html_nodes(".strength") %>%
+    html_text() %>%
+    str_trim()
+  
+  position <-
+    link %>%
+    html_nodes("#phmaincontent_0_ctl00_PanelCurrentEvent td:nth-child(1)") %>%
+    html_text() %>%
+    str_trim()
+  
+  country <-
+    link %>%
+    html_elements("#phmaincontent_0_ctl00_PanelCurrentEvent .flag") %>%
+    html_attr("alt")
+  
+  player <-
+    link %>%
+    html_nodes("td.name") %>% 
+    html_text() %>%
+    str_trim()
+  
+  r1_score <- 
+    link %>%
+    html_nodes(".name+ td") %>%
+    html_text() %>%
+    str_trim()
+  
+  r2_score <-
+    link %>%
+    html_nodes("td:nth-child(5)") %>% 
+    html_text() %>%
+    str_trim()
+  
+  r3_score <-
+    link %>%
+    html_nodes("td:nth-child(6)") %>% 
+    html_text() %>%
+    str_trim()
+  
+  r4_score <-
+    link %>%
+    html_nodes("td:nth-child(7)") %>% 
+    html_text() %>%
+    str_trim()
+  
+  total_score <- 
+    link %>%
+    html_nodes("td:nth-child(8)") %>%
+    html_text() %>%
+    str_trim()
+  
+  out <- tibble(
+    event_id = event_id,
+    date = date,
+    strength_of_field = strength_of_field,
+    position = position,
+    country = country,
+    player = player,
+    r1_score = r1_score,
+    r2_score = r2_score,
+    r3_score = r3_score,
+    r4_score = r4_score,
+    total_score = total_score
+  )
+  
+  return(out)
+  
+}
+
+# create an empty tibble
+results <- tibble(
+  event_id = character(0),
+  date = character(0),
+  strength_of_field = character(0),
+  position = character(0),
+  country = character(0),
+  player = character(0),
+  r1_score = character(0),
+  r2_score = character(0),
+  r3_score = character(0),
+  r4_score = character(0),
+  total_score = character(0)
+)
+
+# loop through all links to get all of the four-round stroke play tournament results
+for(link in result_links) {
+  
+  results <-
+    results %>%
+    bind_rows(getResults(link))
+  
+}
+
+df_02 <- 
+  archived_results %>%
+  mutate(
+    event_id = as.character(event_id),
+    total_score = as.character(total_score)
+  ) %>%
+  bind_rows(., results)
+
+# save the results to an .csv file
+write_csv(df_02, "dpwt_results.csv")
+
+```
+
