@@ -1,5 +1,5 @@
 ---
-title: "PGA Tour Events"
+title: "Majors Events"
 author: "Andrew McKinney"
 date: "`r Sys.Date()`"
 output: html_document
